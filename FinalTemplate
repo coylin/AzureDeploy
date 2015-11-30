@@ -1,0 +1,378 @@
+{
+  "$schema": "http://schema.management.azure.com/schemas/2015-01-01/deploymentTemplate.json#",
+  "contentVersion": "1.0.0.0",
+  "parameters": {
+    "client - lowercase": {
+      "type": "string",
+      "metadata": {
+        "description": "The name of the client."
+      }
+    },
+    "application - lowercase": {
+      "type": "string",
+      "metadata": {
+        "description": "The name of the application."
+      }
+    },
+    "siteLocation": {
+      "type": "string",
+      "allowedValues": [
+        "Central US",
+        "East US",
+        "West US",
+        "North Europe",
+        "West Europe",
+        "East Asia",
+        "Southeast Asia",
+        "Japan East",
+        "Japan West",
+        "Brazil South",
+        "Australia East",
+        "Australia Southeast",
+        "Central India",
+        "South India",
+        "West India"
+      ],
+      "defaultValue": "North Europe",
+      "metadata": {
+        "description": "The location to use for creating the web app and hosting plan."
+      }
+    },
+    "hostingPlanName": {
+      "type": "string",
+      "allowedValues": [
+        "Medium",
+        "Large",
+		"XLarge"
+      ]
+    },
+    "administratorLoginPassword": {
+      "type": "securestring",
+      "metadata": {
+        "description": "The password to use for the database server administrator."
+      }
+    },
+      "gitName": {
+          "type": "string",
+          "minLength": 1
+      },
+      "gitSKU": {
+          "type": "string",
+          "allowedValues": [
+              "Free",
+              "Shared",
+              "Basic",
+              "Standard"
+          ],
+          "defaultValue": "Free"
+      },
+      "gitWorkerSize": {
+          "type": "string",
+          "allowedValues": [
+              "0",
+              "1",
+              "2"
+          ],
+          "defaultValue": "0"
+      }
+  },
+  "variables": {
+    "siteName": "[toLower(concat(parameters('client - lowercase'), '-', parameters('application - lowercase'), '-webapp'))]",
+    "applicationServiceName": "[toLower(concat(parameters('client - lowercase'), '-', parameters('application - lowercase'), '-appservice'))]",
+    "serverName": "[toLower(concat(parameters('client - lowercase'), '-', parameters('application - lowercase'), '-dbserver'))]",
+    "administratorLogin": "[toLower(concat(parameters('client - lowercase'), '-', parameters('application - lowercase'), '-dbadminuser'))]",
+    "databaseName": "[toLower(concat(parameters('client - lowercase'), '-', parameters('application - lowercase'), '-database'))]",
+    "databaseNameUAT": "[toLower(concat(parameters('client - lowercase'), '-', parameters('application - lowercase'), '-databaseUAT'))]",
+    "databaseNamePrevious": "[toLower(concat(parameters('client - lowercase'), '-', parameters('application - lowercase'), '-DatabasePrevious'))]",
+    "siteNameUAT": "slotUAT",
+    "siteNamePrevious": "slotPrevious",
+	"storageAccountName": "[concat(toLower(concat(parameters('client - lowercase'), parameters('application - lowercase'))), 'store')]",
+    "requestedServiceObjectiveName": {
+      "Medium": { "objectiveName": "S1", "dbName": "S1", "dbEdition": "Standard" },
+      "Large": { "objectiveName": "S2", "dbName": "S2", "dbEdition": "Standard"  },
+	  "XLarge": { "objectiveName": "S3", "dbName": "S3", "dbEdition": "Standard"  }
+    },
+    "currentrequestedServiceObjectiveName": "[variables('requestedServiceObjectiveName')[parameters('hostingPlanName')]]",
+	"baseDatabaseLevel": "Basic"
+
+  },
+  "resources": [
+    {
+      "name": "[variables('serverName')]",
+      "type": "Microsoft.Sql/servers",
+      "location": "[parameters('siteLocation')]",
+      "apiVersion": "2014-04-01-preview",
+      "properties": {
+        "administratorLogin": "[variables('administratorLogin')]",
+        "administratorLoginPassword": "[parameters('administratorLoginPassword')]",
+        "version": "12.0"
+      },
+      "resources": [
+        {
+          "name": "[variables('databaseName')]",
+          "type": "databases",
+          "location": "[parameters('siteLocation')]",
+          "apiVersion": "2014-08-01",
+          "dependsOn": [
+            "[concat('Microsoft.Sql/servers/', variables('serverName'))]"
+          ],
+          "properties": {
+            "edition": "[variables('currentrequestedServiceObjectiveName').dbEdition]",
+            "collation": "SQL_Latin1_General_CP1_CI_AS",
+            "maxSizeBytes": "1073741824",
+            "requestedServiceObjectiveName": "[variables('currentrequestedServiceObjectiveName').dbName]"
+          }
+        },
+        {
+          "name": "[variables('databaseNameUAT')]",
+          "type": "databases",
+          "location": "[parameters('siteLocation')]",
+          "apiVersion": "2014-08-01",
+          "dependsOn": [
+            "[concat('Microsoft.Sql/servers/', variables('serverName'))]"
+          ],
+          "properties": {
+            "edition": "Basic",
+            "collation": "SQL_Latin1_General_CP1_CI_AS",
+            "maxSizeBytes": "1073741824",
+            "requestedServiceObjectiveName": "Basic"
+          }
+        },
+        {
+          "name": "[variables('databaseNamePrevious')]",
+          "type": "databases",
+          "location": "[parameters('siteLocation')]",
+          "apiVersion": "2014-08-01",
+          "dependsOn": [
+            "[concat('Microsoft.Sql/servers/', variables('serverName'))]"
+          ],
+          "properties": {
+            "edition": "Basic",
+            "collation": "SQL_Latin1_General_CP1_CI_AS",
+            "maxSizeBytes": "1073741824",
+            "requestedServiceObjectiveName": "Basic"
+          }
+        },
+        {
+          "apiVersion": "2.0",
+          "dependsOn": [
+            "[concat('Microsoft.Sql/servers/', variables('serverName'))]"
+          ],
+          "location": "[parameters('siteLocation')]",
+          "name": "AllowAllWindowsAzureIps",
+          "properties": {
+            "endIpAddress": "0.0.0.0",
+            "startIpAddress": "0.0.0.0"
+          },
+          "type": "firewallrules"
+        }
+      ]
+    },
+    {
+      "apiVersion": "2015-08-01",
+      "type": "Microsoft.Web/serverfarms",
+      "name": "[variables('applicationServiceName')]",
+      "location": "[resourceGroup().location]",
+      "sku": {
+        "tier": "[parameters('hostingPlanName')]",
+        "name": "[variables('currentrequestedServiceObjectiveName').dbName]"
+      },
+      "properties": {
+        "numberOfWorkers": 1
+      }
+    },
+    {
+      "apiVersion": "2015-08-01",
+      "name": "[variables('siteName')]",
+      "type": "Microsoft.Web/Sites",
+      "location": "[parameters('siteLocation')]",
+      "dependsOn": [
+        "[concat('Microsoft.Web/serverFarms/', variables('applicationServiceName'))]"
+      ],
+      "tags": {
+        "[concat('hidden-related:', resourceGroup().id, '/providers/Microsoft.Web/serverfarms/')]": "empty"
+      },
+      "properties": {
+        "serverFarmId": "[variables('applicationServiceName')]",
+        "name": "[variables('siteName')]",
+        "siteConfig": {
+          "appSettings": [
+            {
+              "name": "NEWRELIC_LICENSEKEY",
+              "value": "bfface20a1ada23ca01326f3dac65f441038f7b5"
+            },
+            {
+              "name": "COR_PROFILER",
+              "value": "{71DA0A04-7777-4EC6-9643-7D28B46A8A41}"
+            },
+            {
+              "name": "COR_PROFILER_PATH",
+              "value": "C:\\Home\\site\\wwwroot\\newrelic\\NewRelic.Profiler.dll"
+            },
+            {
+              "name": "NEWRELIC_HOME",
+              "value": "C:\\Home\\site\\wwwroot\\newrelic"
+            },
+            {
+              "name": "COR_ENABLE_PROFILING",
+              "value": "1"
+            },
+            {
+              "name": "DevelopmentMode",
+              "value": "false"
+            }
+          ]
+        }
+      },
+      "resources": [
+        {
+          "apiVersion": "2014-11-01",
+          "type": "config",
+          "name": "connectionstrings",
+          "dependsOn": [
+            "[concat('Microsoft.Web/Sites/', variables('siteName'))]"
+          ],
+          "properties": {
+            "connectionString": {
+              "value": "[concat('Data Source=tcp:', reference(concat('Microsoft.Sql/servers/', variables('serverName'))).fullyQualifiedDomainName, ',1433;Initial Catalog=', variables('databaseName'), ';User Id=', variables('administratorLogin'), '@', variables('serverName'), ';Password=', parameters('administratorLoginPassword'), ';Encrypt=True;TrustServerCertificate=False;Connection Timeout=30;')]",
+              "type": 2
+            }
+          }
+        },
+        {
+          "apiVersion": "2015-08-01",
+          "name": "web",
+          "type": "config",
+          "dependsOn": [
+            "[resourceId('Microsoft.Web/Sites', variables('siteName'))]"
+          ],
+          "properties": {
+            "use32BitWorkerProcess": false
+          }
+        },
+        {
+          "apiVersion": "2015-08-01",
+          "name": "slotconfignames",
+          "type": "config",
+          "dependsOn": [
+            "[resourceId('Microsoft.Web/Sites', variables('siteName'))]"
+          ],
+          "properties": {
+            "connectionStringNames": [ "connectionString" ],
+            "appSettingNames": [ "DevelopmentMode", "COR_ENABLE_PROFILING", "NEWRELIC_HOME", "COR_PROFILER_PATH", "COR_PROFILER", "NEWRELIC_LICENSEKEY" ]
+          }
+        },
+        {
+          "apiVersion": "2015-08-01",
+          "name": "[variables('siteNameUAT')]",
+          "type": "slots",
+          "location": "[parameters('siteLocation')]",
+          "dependsOn": [
+            "[resourceId('Microsoft.Web/Sites', variables('siteName'))]"
+          ],
+          "properties": {
+          },
+          "resources": [
+            {
+              "apiVersion": "2015-08-01",
+              "name": "appsettings",
+              "type": "config",
+              "dependsOn": [
+                "[resourceId('Microsoft.Web/Sites/Slots', variables('siteName'), variables('siteNameUAT'))]"
+              ],
+              "properties": {
+                "DevelopmentMode": "true"
+              }
+            },
+            
+            {
+              "apiVersion": "2014-11-01",
+              "type": "config",
+              "name": "connectionstrings",
+              "dependsOn": [
+                "[resourceId('Microsoft.Web/Sites/Slots', variables('siteName'), variables('siteNameUAT'))]"
+              ],
+              "properties": {
+                "connectionString": {
+                  "value": "[concat('Data Source=tcp:', reference(concat('Microsoft.Sql/servers/', variables('serverName'))).fullyQualifiedDomainName, ',1433;Initial Catalog=', variables('databaseNameUAT'), ';User Id=', variables('administratorLogin'), '@', variables('serverName'), ';Password=', parameters('administratorLoginPassword'), ';Encrypt=True;TrustServerCertificate=False;Connection Timeout=30;')]",
+                  "type": 2
+                }
+              }
+            },
+			
+			{
+			  "apiVersion": "2015-08-01",
+			  "name": "web",
+			  "type": "config",
+			  "dependsOn": [
+				"[resourceId('Microsoft.Web/Sites/Slots', variables('siteName'), variables('siteNameUAT'))]"
+			  ],
+			  "properties": {
+				"use32BitWorkerProcess": false
+			  }
+			}
+          ]
+        },
+        {
+          "apiVersion": "2015-08-01",
+          "name": "[variables('siteNamePrevious')]",
+          "type": "slots",
+          "location": "[parameters('siteLocation')]",
+          "dependsOn": [
+            "[resourceId('Microsoft.Web/Sites', variables('siteName'))]"
+          ],
+          "properties": {
+          },
+          "resources": [
+            {
+              "apiVersion": "2015-08-01",
+              "name": "appsettings",
+              "type": "config",
+              "dependsOn": [
+                "[resourceId('Microsoft.Web/Sites/Slots', variables('siteName'), variables('siteNamePrevious'))]"
+              ],
+              "properties": {
+                "DevelopmentMode": "true"
+              }
+            },
+            {
+              "apiVersion": "2014-11-01",
+              "type": "config",
+              "name": "connectionstrings",
+              "dependsOn": [
+                "[resourceId('Microsoft.Web/Sites/Slots', variables('siteName'), variables('siteNamePrevious'))]"
+              ],
+              "properties": {
+                "connectionString": {
+                  "value": "[concat('Data Source=tcp:', reference(concat('Microsoft.Sql/servers/', variables('serverName'))).fullyQualifiedDomainName, ',1433;Initial Catalog=', variables('databaseNamePrevious'), ';User Id=', variables('administratorLogin'), '@', variables('serverName'), ';Password=', parameters('administratorLoginPassword'), ';Encrypt=True;TrustServerCertificate=False;Connection Timeout=30;')]",
+                  "type": 2
+                }
+              }
+            },
+			
+			{
+			  "apiVersion": "2015-08-01",
+			  "name": "web",
+			  "type": "config",
+			  "dependsOn": [
+				"[resourceId('Microsoft.Web/Sites/Slots', variables('siteName'), variables('siteNamePrevious'))]"
+			  ],
+			  "properties": {
+				"use32BitWorkerProcess": false
+			  }
+			}
+          ]
+        }
+      ]
+    },
+	{
+	  "apiVersion": "2015-06-15",
+      "type": "Microsoft.Storage/storageAccounts",
+      "name": "[variables('storageAccountName')]",
+      "location": "[parameters('siteLocation')]",
+      "properties": {
+        "accountType": "Standard_LRS"
+      }
+    }
+  ]
+    }
